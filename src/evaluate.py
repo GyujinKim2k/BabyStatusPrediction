@@ -51,16 +51,9 @@ def plot_feature_importance(importances):
     print("  Saved feature_importance.png")
 
 
-def plot_predictions_timeline(predictions):
-    """Plot predicted probabilities over time for a sample period."""
-    # Take a 7-day sample from the middle of test set
-    pred = predictions.copy()
-    pred["bin_time"] = pd.to_datetime(pred["bin_time"])
-
-    mid = pred["bin_time"].iloc[len(pred) // 2]
-    start = mid - pd.Timedelta(days=3)
-    end = mid + pd.Timedelta(days=4)
-    sample = pred[(pred["bin_time"] >= start) & (pred["bin_time"] <= end)]
+def _plot_single_week(predictions, start, end, filename):
+    """Plot predicted probabilities for a single week period."""
+    sample = predictions[(predictions["bin_time"] >= start) & (predictions["bin_time"] < end)]
 
     fig, axes = plt.subplots(3, 1, figsize=(16, 10), sharex=True)
 
@@ -73,7 +66,6 @@ def plot_predictions_timeline(predictions):
         ax.plot(sample["bin_time"], sample[prob_col],
                 color=EVENT_COLORS[event], linewidth=0.8, alpha=0.7)
 
-        # Mark actual events
         actual_events = sample[sample[actual_col] == 1]
         if len(actual_events) > 0:
             ax.scatter(actual_events["bin_time"],
@@ -85,21 +77,43 @@ def plot_predictions_timeline(predictions):
         ax.legend(loc="upper right", fontsize=9)
         ax.set_title(f"{event.capitalize()} Prediction", fontsize=12)
 
-        # Add day/night shading
-        for day_offset in range(-4, 5):
+        for day_offset in range(-1, 9):
             night_start = start.normalize() + pd.Timedelta(days=day_offset, hours=21)
             night_end = start.normalize() + pd.Timedelta(days=day_offset + 1, hours=6)
             ax.axvspan(night_start, night_end, alpha=0.08, color="navy")
 
-    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%m/%d %H:%M"))
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter("%m/%d (%a)"))
     axes[-1].xaxis.set_major_locator(mdates.DayLocator())
     plt.xticks(rotation=45)
-    plt.suptitle(f"Prediction Timeline ({start.strftime('%Y-%m-%d')} ~ {end.strftime('%Y-%m-%d')})",
+    plt.suptitle(f"Prediction Timeline ({start.strftime('%Y-%m-%d')} ~ {(end - pd.Timedelta(days=1)).strftime('%Y-%m-%d')})",
                  fontsize=14, y=1.01)
     plt.tight_layout()
-    plt.savefig(OUTPUT_DIR / "predictions_timeline.png", dpi=150, bbox_inches="tight")
+    plt.savefig(OUTPUT_DIR / filename, dpi=150, bbox_inches="tight")
     plt.close()
-    print("  Saved predictions_timeline.png")
+    print(f"  Saved {filename}")
+
+
+def plot_predictions_timeline(predictions):
+    """Plot predicted probabilities for 3 sample weeks across the test set."""
+    pred = predictions.copy()
+    pred["bin_time"] = pd.to_datetime(pred["bin_time"])
+
+    # Pick 3 weeks: early, middle, late in test set
+    test_start = pred["bin_time"].min()
+    test_end = pred["bin_time"].max()
+    total_days = (test_end - test_start).days
+
+    week_starts = [
+        test_start.normalize(),                                          # early
+        (test_start + pd.Timedelta(days=total_days // 2)).normalize(),   # middle
+        (test_end - pd.Timedelta(days=7)).normalize(),                   # late
+    ]
+    labels = ["early", "mid", "late"]
+
+    for week_start, label in zip(week_starts, labels):
+        week_end = week_start + pd.Timedelta(days=7)
+        filename = f"predictions_timeline_{label}.png"
+        _plot_single_week(pred, week_start, week_end, filename)
 
 
 def plot_roc_pr_curves(predictions):
